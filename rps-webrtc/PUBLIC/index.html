@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>RPS WebRTC Multiplayer (Pion)</title>
+</head>
+<body>
+
+<h2>Rock Paper Scissors – Multiplayer</h2>
+
+<button onclick="sendChoice('rock')">🪨 Rock</button>
+<button onclick="sendChoice('paper')">📄 Paper</button>
+<button onclick="sendChoice('scissors')">✂️ Scissors</button>
+
+<p id="status">Connecting…</p>
+
+<script>
+const ws = new WebSocket("ws://localhost:8080/ws");
+const pc = new RTCPeerConnection();
+let dc;
+
+let myChoice = null;
+let oppChoice = null;
+
+// buat DataChannel
+dc = pc.createDataChannel("game");
+
+dc.onopen = () => {
+  status("Connected. Choose!");
+};
+
+dc.onmessage = (e) => {
+  const msg = (e.data instanceof ArrayBuffer)
+    ? new TextDecoder().decode(e.data)
+    : e.data;
+
+  oppChoice = msg;
+  check();
+};
+
+// ICE
+pc.onicecandidate = (e) => {
+  if (e.candidate) ws.send(JSON.stringify({ type: "ice", data: e.candidate }));
+};
+
+// signaling
+ws.onmessage = async (e) => {
+  const msg = JSON.parse(e.data);
+  if (msg.type === "answer") await pc.setRemoteDescription(msg.data);
+  if (msg.type === "ice") await pc.addIceCandidate(msg.data);
+};
+
+// kirim offer
+ws.onopen = async () => {
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  ws.send(JSON.stringify({ type: "offer", data: offer }));
+};
+
+function sendChoice(c) {
+  if (!dc || dc.readyState !== "open") return alert("Not ready");
+  myChoice = c;
+  dc.send(c);
+  status(`You chose ${c}. Waiting opponent…`);
+}
+
+function check() {
+  if (!myChoice || !oppChoice) return;
+  let res = "Draw";
+  if (
+    (myChoice === "rock" && oppChoice === "scissors") ||
+    (myChoice === "paper" && oppChoice === "rock") ||
+    (myChoice === "scissors" && oppChoice === "paper")
+  ) res = "🎉 You Win!";
+  else if (myChoice !== oppChoice) res = "❌ You Lose!";
+
+  status(`You: ${myChoice} | Opponent: ${oppChoice} → ${res}`);
+  myChoice = oppChoice = null;
+}
+
+function status(t){ document.getElementById("status").innerText = t; }
+</script>
+
+</body>
+</html>
